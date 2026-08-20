@@ -24,6 +24,13 @@ on:
       - "appimage/**"
       - "flatpak/**"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ensure_cargo_fmt:
   #   name: Ensure 'cargo fmt' has been run
@@ -68,6 +75,7 @@ jobs:
   build:
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
     runs-on: ${{ matrix.job.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -100,14 +108,14 @@ jobs:
         swap-storage: false
 
     - name: Export GitHub Actions cache environment variables
-      uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       with:
         script: |
           core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
           core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
     - name: Checkout source code
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
         submodules: recursive
 
@@ -175,16 +183,8 @@ jobs:
     - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
     - name: Build
-      uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1
-      with:
-        use-cross: ${{ matrix.job.use-cross }}
-        command: build
-        args: --locked --target=${{ matrix.job.target }}
-
-    - name: clean
       shell: bash
-      run: |
-        cargo clean
+      run: cargo build --locked --target=${{ matrix.job.target }}
 
     # - name: Strip debug information from executable
     #   id: strip
@@ -218,10 +218,6 @@ jobs:
     #       "${STRIP}" "${BIN_PATH}"
     #     fi
 
-    #     # Let subsequent steps know where to find the (stripped) bin
-    #     echo ::set-output name=BIN_PATH::${BIN_PATH}
-    #     echo ::set-output name=BIN_NAME::${BIN_NAME}
-
     - name: Set testing options
       id: test-options
       shell: bash
@@ -238,13 +234,9 @@ jobs:
             ;;
         esac;
 
-        #deprecated echo ::set-output name=CARGO_TEST_OPTIONS::${CARGO_TEST_OPTIONS}
         echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_ENV
         echo "CARGO_TEST_OPTIONS=${CARGO_TEST_OPTIONS}" >> $GITHUB_OUTPUT
 
     - name: Run tests
-      uses: actions-rs/cargo@844f36862e911db73fe0815f00a4a2602c279505 # v1
-      with:
-        use-cross: ${{ matrix.job.use-cross }}
-        command: test
-        args: --locked --target=${{ matrix.job.target }} ${{ steps.test-options.outputs.CARGO_TEST_OPTIONS}}
+      shell: bash
+      run: cargo test --locked --target=${{ matrix.job.target }} ${{ steps.test-options.outputs.CARGO_TEST_OPTIONS }}

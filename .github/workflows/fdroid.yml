@@ -9,6 +9,13 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+-[0-9]+'
       - '[0-9]+.[0-9]+.[0-9]+-[0-9]+'
 
+permissions:
+  contents: write
+
+concurrency:
+  group: fdroid-version
+  cancel-in-progress: true
+
 jobs:
   # https://gitlab.com/fdroid/fdroiddata/-/blob/master/metadata/com.carriez.flutter_hbb.yml
   # Finds latest release and transforms F-Droid version code from version as follows:
@@ -16,14 +23,19 @@ jobs:
   update-fdroid-version-file:
     name: Publish RustDesk version file for F-Droid updater
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Generate RustDesk version file
         run: |
+          set -euo pipefail
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             UPSTREAM_VERNAME="${GITHUB_REF##refs/tags/}"
             UPSTREAM_VERNAME="${UPSTREAM_VERNAME##v}"
           else
-            UPSTREAM_VERNAME="$(curl https://api.github.com/repos/rustdesk/rustdesk/releases/latest  | jq -r .tag_name | sed 's/^v//')"
+            UPSTREAM_VERNAME="$(curl --fail --silent --show-error \
+              --retry 5 --retry-all-errors --connect-timeout 15 \
+              https://api.github.com/repos/rustdesk/rustdesk/releases/latest \
+              | jq -er .tag_name | sed 's/^v//')"
           fi
           UPSTREAM_VERCODE="$(echo "$UPSTREAM_VERNAME" | tr '.' ' ' | tr '-' ' ' | while read -r MAJOR MINOR PATCH REV; do [ -z "$MAJOR" ] && MAJOR=0; [ -z "$MINOR" ] && MINOR=0; [ -z "$PATCH" ] && PATCH=0; [ -z "$REV" ] && REV=0; echo "$(( 1000000 * $MAJOR + 10000 * $MINOR + 100 * $PATCH + $REV ))"; done)"
           echo "versionName=$UPSTREAM_VERNAME"  > rustdesk-version.txt
@@ -31,7 +43,7 @@ jobs:
         shell: bash
 
       - name: Publish RustDesk version file
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3
         with:
           prerelease: true
           tag_name: "fdroid-version"

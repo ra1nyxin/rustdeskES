@@ -8,22 +8,18 @@ on:
           default: true
         target:
             description: 'Target'
-            required: true
             type: string
             default: 'windows-2022'
         configuration:
             description: 'Configuration'
-            required: true
             type: string
             default: 'Release'
         platform:
             description: 'Platform'
-            required: true
             type: string
             default: 'x64'
         target_version:
             description: 'TargetVersion'
-            required: true
             type: string
             default: 'Windows10'
 
@@ -33,21 +29,26 @@ env:
 jobs:
   build-RustDeskTempTopMostWindow:
     runs-on: ${{ inputs.target }}
+    timeout-minutes: 15
     strategy:
         fail-fast: false
     env:
       build_output_dir: RustDeskTempTopMostWindow/WindowInjection/${{ inputs.platform }}/${{ inputs.configuration }}
     steps:
       - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3
 
       - name: Download the source code
-        run: |
-          git clone https://github.com/rustdesk-org/RustDeskTempTopMostWindow RustDeskTempTopMostWindow
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: rustdesk-org/RustDeskTempTopMostWindow
+          ref: ecd8d6a139eee76845ea66423fb739af450fda90
+          path: RustDeskTempTopMostWindow
+          persist-credentials: false
 
       - name: Build the project
         run: |
-          cd RustDeskTempTopMostWindow && git checkout ecd8d6a139eee76845ea66423fb739af450fda90
+          cd RustDeskTempTopMostWindow
           msbuild ${{ env.project_path }} -p:Configuration=${{ inputs.configuration }} -p:Platform=${{ inputs.platform }} /p:TargetVersion=${{ inputs.target_version }}
 
       - name: Archive build artifacts

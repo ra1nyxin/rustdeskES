@@ -13,6 +13,7 @@ env:
 jobs:
   generate_bridge:
     runs-on: ${{ matrix.job.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -35,15 +36,15 @@ jobs:
             }
     steps:
       - name: Checkout source code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: recursive
 
       - name: Install prerequisites
         run: |
-          sudo apt-get install ca-certificates -y
           sudo apt-get update -y
           sudo apt-get install -y \
+            ca-certificates \
             clang \
             cmake \
             curl \
@@ -71,7 +72,7 @@ jobs:
 
       - name: Cache Bridge
         id: cache-bridge
-        uses: actions/cache@6f8efc29b200d32929f49075959781ed54ec270c # v3
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/flutter_rust_bridge
           key: bridge-${{ matrix.job.flutter-version }}
