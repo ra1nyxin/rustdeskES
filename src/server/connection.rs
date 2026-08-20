@@ -258,6 +258,9 @@ pub struct Connection {
     terminal: bool,
     port_forward_socket: Option<Framed<TcpStream, BytesCodec>>,
     port_forward_address: String,
+    #[cfg(target_os = "android")]
+    tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
+    #[cfg(not(target_os = "android"))]
     tx_to_cm: mpsc::Sender<ipc::Data>,
     authorized: bool,
     require_2fa: Option<totp_rs::TOTP>,
@@ -392,6 +395,7 @@ const H1: Duration = Duration::from_secs(3600);
 const MILLI1: Duration = Duration::from_millis(1);
 const SEND_TIMEOUT_VIDEO: u64 = 12_000;
 const SEND_TIMEOUT_OTHER: u64 = SEND_TIMEOUT_VIDEO * 10;
+#[cfg(not(target_os = "android"))]
 const CM_IPC_QUEUE_CAPACITY: usize = 256;
 const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -436,6 +440,9 @@ impl Connection {
         let (tx_from_cm_holder, mut rx_from_cm) = mpsc::unbounded_channel::<ipc::Data>();
         // holding tx_from_cm_holder to avoid cpu burning of rx_from_cm.recv when all sender closed
         let tx_from_cm = tx_from_cm_holder.clone();
+        #[cfg(target_os = "android")]
+        let (tx_to_cm, rx_to_cm) = mpsc::unbounded_channel::<ipc::Data>();
+        #[cfg(not(target_os = "android"))]
         let (tx_to_cm, rx_to_cm) = mpsc::channel::<ipc::Data>(CM_IPC_QUEUE_CAPACITY);
         let (tx, mut rx) = mpsc::unbounded_channel::<(Instant, Arc<Message>)>();
         let (tx_video, mut rx_video) = mpsc::unbounded_channel::<(Instant, Arc<Message>)>();
@@ -2188,6 +2195,11 @@ impl Connection {
 
     #[inline]
     fn send_to_cm(&mut self, data: ipc::Data) {
+        #[cfg(target_os = "android")]
+        {
+            self.tx_to_cm.send(data).ok();
+        }
+        #[cfg(not(target_os = "android"))]
         match self.tx_to_cm.try_send(data) {
             Ok(()) => {}
             Err(mpsc::error::TrySendError::Full(_)) => {

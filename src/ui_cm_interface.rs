@@ -32,8 +32,9 @@ use hbb_common::{config::keys::*, tokio::sync::Mutex as TokioMutex};
 use serde_derive::Serialize;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 use std::iter::FromIterator;
+use std::path::Path;
 #[cfg(not(any(target_os = "ios")))]
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::sync::Arc;
 use std::{
@@ -47,7 +48,6 @@ use std::{
 
 /// Default maximum number of files allowed per transfer request.
 /// Unit: number of files (not bytes).
-#[cfg(not(any(target_os = "ios")))]
 const DEFAULT_MAX_VALIDATED_FILES: usize = 10_000;
 
 /// Maximum number of files allowed in a single file transfer request.
@@ -61,7 +61,6 @@ const DEFAULT_MAX_VALIDATED_FILES: usize = 10_000;
 /// Unit: number of files (not bytes).
 /// Default: 10,000 files.
 /// Configured via: `OPTION_FILE_TRANSFER_MAX_FILES` ("file-transfer-max-files")
-#[cfg(not(any(target_os = "ios")))]
 static MAX_VALIDATED_FILES: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
 
 /// Get the maximum number of files allowed per transfer request.
@@ -73,7 +72,6 @@ static MAX_VALIDATED_FILES: std::sync::OnceLock<usize> = std::sync::OnceLock::ne
 ///   (Note: negative values are not valid for `usize` and will cause parsing to fail.)
 ///
 /// Unit: number of files.
-#[cfg(not(any(target_os = "ios")))]
 #[inline]
 pub fn get_max_validated_files() -> usize {
     *MAX_VALIDATED_FILES.get_or_init(|| {
@@ -102,7 +100,6 @@ pub fn get_max_validated_files() -> usize {
 /// # Returns
 /// * `Ok(())` if within limit
 /// * `Err(String)` with error message if limit exceeded
-#[cfg(not(any(target_os = "ios")))]
 pub fn check_file_count_limit(file_count: usize) -> Result<(), String> {
     let max_files = get_max_validated_files();
     if file_count > max_files {
@@ -122,7 +119,6 @@ pub fn check_file_count_limit(file_count: usize) -> Result<(), String> {
 ///
 /// `hbb_common::fs::get_recursive_files()` builds its entire result before returning,
 /// so checking its output afterwards cannot protect the process from a huge directory.
-#[cfg(not(any(target_os = "ios")))]
 pub fn get_recursive_files_limited(
     path: &str,
     include_hidden: bool,
@@ -141,7 +137,6 @@ pub fn get_recursive_files_limited(
     Ok(files)
 }
 
-#[cfg(not(any(target_os = "ios")))]
 fn collect_recursive_files(
     path: &Path,
     prefix: &Path,
@@ -175,7 +170,6 @@ fn collect_recursive_files(
     Ok(())
 }
 
-#[cfg(not(any(target_os = "ios")))]
 pub fn new_limited_read_job(
     id: i32,
     job_type: fs::JobType,
