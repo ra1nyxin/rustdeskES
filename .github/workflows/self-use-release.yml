@@ -62,13 +62,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r tag; do
-            if [ -n "$tag" ]; then
-              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          while IFS= read -r release_id; do
+            if [ -n "$release_id" ]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
             fi
           done < <(
             gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-              --jq '.[] | select(.draft == true and (.tag_name | startswith("self-use-"))) | .tag_name'
+              --jq '.[] | select(.draft == true and (.tag_name | startswith("self-use-"))) | .id'
           )
 
       - name: Generate release tag and title
