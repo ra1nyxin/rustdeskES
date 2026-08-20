@@ -13,6 +13,7 @@ use hbb_common::{
     bail, libc, log,
     message_proto::{KeyEvent, MouseEvent},
     protobuf::Message,
+    timeout,
     tokio::{self, sync::mpsc},
     ResultType,
 };
@@ -61,6 +62,8 @@ const SHMEM_PARENT_DIR: &str = "portable_service_shmem";
 const SHMEM_NAME_MAX_LEN: usize = 64;
 const MAX_NACK: usize = 3;
 const PORTABLE_SERVICE_STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
+const PORTABLE_SERVICE_IPC_QUEUE_CAPACITY: usize = 256;
+const PORTABLE_SERVICE_IPC_SEND_TIMEOUT_MS: u64 = 3_000;
 const MAX_DXGI_FAIL_TIME: usize = 5;
 
 #[inline]
@@ -836,7 +839,7 @@ pub mod client {
         static ref SHMEM: Arc<Mutex<Option<SharedMemory>>> = Default::default();
         static ref SHMEM_RUNTIME_NAME: Arc<Mutex<Option<String>>> = Default::default();
         static ref IPC_RUNTIME_TOKEN: Arc<Mutex<Option<String>>> = Default::default();
-        static ref SENDER : Mutex<mpsc::UnboundedSender<ipc::Data>> = Mutex::new(client::start_ipc_server());
+        static ref SENDER : Mutex<mpsc::Sender<ipc::Data>> = Mutex::new(client::start_ipc_server());
         static ref QUICK_SUPPORT: Arc<Mutex<bool>> = Default::default();
     }
 
@@ -1317,14 +1320,14 @@ pub mod client {
         fn set_output_texture(&mut self, _texture: bool) {}
     }
 
-    pub(super) fn start_ipc_server() -> mpsc::UnboundedSender<Data> {
-        let (tx, rx) = mpsc::unbounded_channel::<Data>();
+    pub(super) fn start_ipc_server() -> mpsc::Sender<Data> {
+        let (tx, rx) = mpsc::channel::<Data>(PORTABLE_SERVICE_IPC_QUEUE_CAPACITY);
         std::thread::spawn(move || start_ipc_server_async(rx));
         tx
     }
 
     #[tokio::main(flavor = "current_thread")]
-    async fn start_ipc_server_async(rx: mpsc::UnboundedReceiver<Data>) {
+    async fn start_ipc_server_async(rx: mpsc::Receiver<Data>) {
         use DataPortableService::*;
         let rx = Arc::new(tokio::sync::Mutex::new(rx));
         let postfix = IPC_SUFFIX;
@@ -1398,7 +1401,13 @@ pub mod client {
                                                         }
                                                         Ok(Some(Data::DataPortableService(data))) => match data {
                                                             Ping => {
-                                                                stream.send(&Data::DataPortableService(Pong)).await.ok();
+                                                                if let Err(err) = send_ipc_data(
+                                                                    &mut stream,
+                                                                    &Data::DataPortableService(Pong),
+                                                                ).await {
+                                                                    log::info!("portable service IPC send failed: {}", err);
+                                                                    break;
+                                                                }
                                                             }
                                                             Pong => {
                                                                 nack = 0;
@@ -1413,7 +1422,13 @@ pub mod client {
                                                                         .iter()
                                                                         .filter(|c| c.conn_type == crate::server::AuthConnType::Remote)
                                                                         .count();
-                                                                    stream.send(&Data::DataPortableService(ConnCount(Some(remote_count)))).await.ok();
+                                                                    if let Err(err) = send_ipc_data(
+                                                                        &mut stream,
+                                                                        &Data::DataPortableService(ConnCount(Some(remote_count))),
+                                                                    ).await {
+                                                                        log::info!("portable service IPC send failed: {}", err);
+                                                                        break;
+                                                                    }
                                                                 }
                                                             },
                                                             WillClose => {
@@ -1432,10 +1447,19 @@ pub mod client {
                                                         log::error!("max ipc nack");
                                                         break;
                                                     }
-                                                    stream.send(&Data::DataPortableService(Ping)).await.ok();
+                                                    if let Err(err) = send_ipc_data(
+                                                        &mut stream,
+                                                        &Data::DataPortableService(Ping),
+                                                    ).await {
+                                                        log::info!("portable service IPC send failed: {}", err);
+                                                        break;
+                                                    }
                                                 }
                                                 Some(data) = rx.recv() => {
-                                                    allow_err!(stream.send(&data).await);
+                                                    if let Err(err) = send_ipc_data(&mut stream, &data).await {
+                                                        log::info!("portable service IPC send failed: {}", err);
+                                                        break;
+                                                    }
                                                 }
                                             }
                                         }
@@ -1457,10 +1481,15 @@ pub mod client {
         }
     }
 
+    async fn send_ipc_data(stream: &mut Connection, data: &Data) -> ResultType<()> {
+        timeout(PORTABLE_SERVICE_IPC_SEND_TIMEOUT_MS, stream.send(data)).await??;
+        Ok(())
+    }
+
     fn ipc_send(data: Data) -> ResultType<()> {
         let sender = SENDER.lock().unwrap();
         sender
-            .send(data)
+            .try_send(data)
             .map_err(|e| anyhow!("ipc send error:{:?}", e))
     }
 
