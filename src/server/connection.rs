@@ -3257,7 +3257,10 @@ impl Connection {
                                         conn_id: self.inner.id(),
                                     });
                                 } else {
-                                    match fs::get_recursive_files(&f.path, f.include_hidden) {
+                                    match crate::ui_cm_interface::get_recursive_files_limited(
+                                        &f.path,
+                                        f.include_hidden,
+                                    ) {
                                         Err(err) => {
                                             log::error!(
                                                 "Failed to get recursive files for {}: {}",
@@ -5183,7 +5186,7 @@ impl Connection {
         path: String,
         check_file_limit: bool,
     ) {
-        match fs::TransferJob::new_read(
+        match crate::ui_cm_interface::new_limited_read_job(
             id,
             job_type,
             "".to_string(),

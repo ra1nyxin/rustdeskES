@@ -622,7 +622,7 @@ impl<T: InvokeUiSession> Remote<T> {
                             .await
                     );
                 } else {
-                    match fs::TransferJob::new_read(
+                    match crate::ui_cm_interface::new_limited_read_job(
                         id,
                         r#type,
                         to.clone(),
@@ -692,7 +692,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     job.is_last_job = true;
                     self.write_jobs.push(job);
                 } else {
-                    match fs::TransferJob::new_read(
+                    match crate::ui_cm_interface::new_limited_read_job(
                         id,
                         r#type,
                         to.clone(),
@@ -853,7 +853,10 @@ impl<T: InvokeUiSession> Remote<T> {
                     self.remove_jobs
                         .insert(id, RemoveJob::new(Vec::new(), path, sep, is_remote));
                 } else {
-                    match fs::get_recursive_files(&path, include_hidden) {
+                    match crate::ui_cm_interface::get_recursive_files_limited(
+                        &path,
+                        include_hidden,
+                    ) {
                         Ok(entries) => {
                             self.handler.update_folder_files(
                                 id,

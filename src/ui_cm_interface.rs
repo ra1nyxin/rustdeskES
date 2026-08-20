@@ -33,7 +33,7 @@ use serde_derive::Serialize;
 #[cfg(any(target_os = "android", target_os = "ios", feature = "flutter"))]
 use std::iter::FromIterator;
 #[cfg(not(any(target_os = "ios")))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "windows")]
 use std::sync::Arc;
 use std::{
@@ -69,24 +69,18 @@ static MAX_VALIDATED_FILES: std::sync::OnceLock<usize> = std::sync::OnceLock::ne
 /// Initializes the value from configuration (`OPTION_FILE_TRANSFER_MAX_FILES`)
 /// on first call. Semantics:
 /// - If the option is set to `0`, `DEFAULT_MAX_VALIDATED_FILES` (10,000) is used as a safe upper bound.
-/// - If the option is unset, negative, or non-integer,
-///   `usize::MAX` is used to represent "no limit" for backward compatibility with older versions
-///   that did not enforce any file‑count restriction.
+/// - If the option is unset, negative, or non-integer, the safe default of 10,000 is used.
 ///   (Note: negative values are not valid for `usize` and will cause parsing to fail.)
 ///
 /// Unit: number of files.
 #[cfg(not(any(target_os = "ios")))]
 #[inline]
 pub fn get_max_validated_files() -> usize {
-    // If `OPTION_FILE_TRANSFER_MAX_FILES` unset, negative, or non-integer, use
-    // `usize::MAX` to represent "no limit", maintaining backward compatibility
-    // with versions that had no file transfer restrictions.
-    const NO_LIMIT_FILE_COUNT: usize = usize::MAX;
     *MAX_VALIDATED_FILES.get_or_init(|| {
         let c = crate::get_builtin_option(OPTION_FILE_TRANSFER_MAX_FILES)
             .trim()
             .parse::<usize>()
-            .unwrap_or(NO_LIMIT_FILE_COUNT);
+            .unwrap_or(DEFAULT_MAX_VALIDATED_FILES);
         if c == 0 {
             DEFAULT_MAX_VALIDATED_FILES
         } else {
@@ -122,6 +116,105 @@ pub fn check_file_count_limit(file_count: usize) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+/// Recursively enumerate transfer files while enforcing the configured file limit.
+///
+/// `hbb_common::fs::get_recursive_files()` builds its entire result before returning,
+/// so checking its output afterwards cannot protect the process from a huge directory.
+#[cfg(not(any(target_os = "ios")))]
+pub fn get_recursive_files_limited(
+    path: &str,
+    include_hidden: bool,
+) -> ResultType<Vec<FileEntry>> {
+    let path = fs::get_path(path);
+    if path.is_file() {
+        return fs::get_recursive_files(&fs::get_string(&path), include_hidden);
+    }
+    if !path.is_dir() {
+        bail!("Not exists");
+    }
+
+    let max_files = get_max_validated_files();
+    let mut files = Vec::new();
+    collect_recursive_files(&path, Path::new(""), include_hidden, max_files, &mut files)?;
+    Ok(files)
+}
+
+#[cfg(not(any(target_os = "ios")))]
+fn collect_recursive_files(
+    path: &Path,
+    prefix: &Path,
+    include_hidden: bool,
+    max_files: usize,
+    files: &mut Vec<FileEntry>,
+) -> ResultType<()> {
+    let dir = fs::read_dir(path, include_hidden)?;
+    for entry in &dir.entries {
+        match entry.entry_type.enum_value() {
+            Ok(FileType::File) => {
+                if files.len() >= max_files {
+                    bail!("file transfer rejected: too many files (limit: {})", max_files);
+                }
+                let mut entry = entry.clone();
+                entry.name = fs::get_string(&prefix.join(&entry.name));
+                files.push(entry);
+            }
+            Ok(FileType::Dir) => {
+                collect_recursive_files(
+                    &path.join(&entry.name),
+                    &prefix.join(&entry.name),
+                    include_hidden,
+                    max_files,
+                    files,
+                )?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "ios")))]
+pub fn new_limited_read_job(
+    id: i32,
+    job_type: fs::JobType,
+    remote: String,
+    data_source: fs::DataSource,
+    file_num: i32,
+    include_hidden: bool,
+    is_remote: bool,
+    overwrite_detection: bool,
+) -> ResultType<fs::TransferJob> {
+    if let fs::DataSource::FilePath(path) = &data_source {
+        let path = match path.to_str() {
+            Some(path) => path,
+            None => bail!("Invalid path"),
+        };
+        let files = get_recursive_files_limited(path, include_hidden)?;
+        return fs::TransferJob::new_write(
+            id,
+            job_type,
+            remote,
+            data_source,
+            file_num,
+            include_hidden,
+            is_remote,
+            overwrite_detection,
+        )
+        .with_files(files);
+    }
+
+    fs::TransferJob::new_read(
+        id,
+        job_type,
+        remote,
+        data_source,
+        file_num,
+        include_hidden,
+        is_remote,
+        overwrite_detection,
+    )
 }
 
 #[derive(Serialize, Clone)]
@@ -1240,7 +1333,7 @@ async fn start_read_job(
     let path_clone = path.clone();
     let result = spawn_blocking(move || -> ResultType<fs::TransferJob> {
         let data_source = fs::DataSource::FilePath(PathBuf::from(&path));
-        fs::TransferJob::new_read(
+        new_limited_read_job(
             id,
             fs::JobType::Generic,
             "".to_string(),
@@ -1475,7 +1568,8 @@ async fn read_all_files(
     tx: &UnboundedSender<Data>,
 ) {
     let path_clone = path.clone();
-    let result = spawn_blocking(move || fs::get_recursive_files(&path, include_hidden)).await;
+    let result =
+        spawn_blocking(move || get_recursive_files_limited(&path, include_hidden)).await;
 
     let result = match result {
         Ok(Ok(files)) => {
@@ -1737,6 +1831,29 @@ mod tests {
             }
             let _ = fs::remove_dir_all(&dir);
         });
+    }
+
+    #[test]
+    #[cfg(not(any(target_os = "ios")))]
+    fn recursive_file_collection_stops_at_limit() {
+        let dir = std::env::temp_dir().join("rustdesk_recursive_file_limit_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("one.txt"), b"one").unwrap();
+        fs::write(dir.join("two.txt"), b"two").unwrap();
+
+        let mut files = Vec::new();
+        let result = super::collect_recursive_files(
+            &dir,
+            std::path::Path::new(""),
+            false,
+            1,
+            &mut files,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(files.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
