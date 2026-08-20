@@ -56,6 +56,21 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       title: ${{ steps.release.outputs.title }}
     steps:
+      - name: Remove incomplete self-use drafts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              gh release delete "$tag" --cleanup-tag --yes
+            fi
+          done < <(
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+              --jq '.[] | select(.draft == true and (.tag_name | startswith("self-use-"))) | .tag_name'
+          )
+
       - name: Generate release tag and title
         id: release
         shell: bash
