@@ -2537,7 +2537,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release edit "$TAG_NAME" \
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" \
             --draft=false \
             --prerelease \
             --title "$RELEASE_NAME"
