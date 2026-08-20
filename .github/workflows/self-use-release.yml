@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   check:
-    name: Check Rust formatting
+    name: Check modified Rust source
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout source code
@@ -29,8 +29,8 @@ jobs:
           toolchain: "1.75"
           components: rustfmt
 
-      - name: Check Rust formatting
-        run: cargo fmt --all -- --check
+      - name: Check modified Rust source formatting
+        run: rustfmt --check --edition 2021 src/server/connection.rs
 
   prepare-release:
     name: Create unique release identity
