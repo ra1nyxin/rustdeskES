@@ -1,0 +1,61 @@
+name: Self-use Passwordless Release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: self-use-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check Rust formatting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: "1.75"
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt --all -- --check
+
+  prepare-release:
+    name: Create unique release identity
+    needs: check
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      title: ${{ steps.release.outputs.title }}
+    steps:
+      - name: Generate release tag and title
+        id: release
+        shell: bash
+        run: |
+          value="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+          tag="self-use-${value}"
+          title="自用免密构建 ${value}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "title=${title}" >> "$GITHUB_OUTPUT"
+
+  build-and-release:
+    name: Build and publish self-use release
+    needs: prepare-release
+    uses: ./.github/workflows/flutter-build.yml
+    secrets: inherit
+    with:
+      upload-artifact: true
+      upload-tag: ${{ needs.prepare-release.outputs.tag }}
+      release-name: ${{ needs.prepare-release.outputs.title }}
