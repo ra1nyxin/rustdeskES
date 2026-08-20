@@ -171,7 +171,7 @@ struct Session {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 struct StartCmIpcPara {
-    rx_to_cm: mpsc::UnboundedReceiver<ipc::Data>,
+    rx_to_cm: mpsc::Receiver<ipc::Data>,
     tx_from_cm: mpsc::UnboundedSender<ipc::Data>,
 }
 
@@ -258,7 +258,7 @@ pub struct Connection {
     terminal: bool,
     port_forward_socket: Option<Framed<TcpStream, BytesCodec>>,
     port_forward_address: String,
-    tx_to_cm: mpsc::UnboundedSender<ipc::Data>,
+    tx_to_cm: mpsc::Sender<ipc::Data>,
     authorized: bool,
     require_2fa: Option<totp_rs::TOTP>,
     awaiting_2fa: bool,
@@ -392,6 +392,7 @@ const H1: Duration = Duration::from_secs(3600);
 const MILLI1: Duration = Duration::from_millis(1);
 const SEND_TIMEOUT_VIDEO: u64 = 12_000;
 const SEND_TIMEOUT_OTHER: u64 = SEND_TIMEOUT_VIDEO * 10;
+const CM_IPC_QUEUE_CAPACITY: usize = 256;
 const SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Whether the DRM backend can serve a Wayland login screen here.
@@ -435,7 +436,7 @@ impl Connection {
         let (tx_from_cm_holder, mut rx_from_cm) = mpsc::unbounded_channel::<ipc::Data>();
         // holding tx_from_cm_holder to avoid cpu burning of rx_from_cm.recv when all sender closed
         let tx_from_cm = tx_from_cm_holder.clone();
-        let (tx_to_cm, rx_to_cm) = mpsc::unbounded_channel::<ipc::Data>();
+        let (tx_to_cm, rx_to_cm) = mpsc::channel::<ipc::Data>(CM_IPC_QUEUE_CAPACITY);
         let (tx, mut rx) = mpsc::unbounded_channel::<(Instant, Arc<Message>)>();
         let (tx_video, mut rx_video) = mpsc::unbounded_channel::<(Instant, Arc<Message>)>();
         let (tx_input, _rx_input) = std_mpsc::channel();
@@ -2187,7 +2188,21 @@ impl Connection {
 
     #[inline]
     fn send_to_cm(&mut self, data: ipc::Data) {
-        self.tx_to_cm.send(data).ok();
+        match self.tx_to_cm.try_send(data) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                log::warn!(
+                    "Connection #{} dropped CM IPC message because the queue is full",
+                    self.inner.id()
+                );
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                log::debug!(
+                    "Connection #{} dropped CM IPC message because the channel is closed",
+                    self.inner.id()
+                );
+            }
+        }
     }
 
     #[inline]
@@ -4897,7 +4912,7 @@ impl Connection {
         };
         #[cfg(any(target_os = "android", target_os = "ios"))]
         let data = ipc::Data::Close;
-        self.tx_to_cm.send(data).ok();
+        self.send_to_cm(data);
         self.port_forward_socket.take();
     }
 
@@ -5925,7 +5940,7 @@ pub fn claim_pending_switch_sides_uuid(id: &str, uuid: &uuid::Uuid) -> bool {
 // IPC bootstrap summary:
 // - Start CM when missing, then bridge bidirectional messages between this task and CM IPC.
 async fn start_ipc(
-    mut rx_to_cm: mpsc::UnboundedReceiver<ipc::Data>,
+    mut rx_to_cm: mpsc::Receiver<ipc::Data>,
     tx_from_cm: mpsc::UnboundedSender<ipc::Data>,
 ) -> ResultType<()> {
     use hbb_common::anyhow::anyhow;
