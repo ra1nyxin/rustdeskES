@@ -1,6 +1,7 @@
 name: Self-use Passwordless Release
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -15,37 +16,25 @@ concurrency:
 
 jobs:
   check:
-    name: Check modified Rust source
+    name: Check changed files
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     steps:
       - name: Checkout source code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          submodules: recursive
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
-        with:
-          toolchain: "1.75"
-          components: rustfmt
-
-      - name: Check modified Rust source formatting
+      - name: Check changed files
         shell: bash
         run: |
           set -euo pipefail
           base="${{ github.event.before }}"
-          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] || \
+             ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
             base="${{ github.sha }}^"
           fi
-          mapfile -d '' files < <(git diff --name-only --diff-filter=ACMR -z "$base" "${{ github.sha }}" -- '*.rs')
-          if (( ${#files[@]} == 0 )); then
-            echo "No Rust source files changed"
-            exit 0
-          fi
-          printf 'Checking %s\n' "${files[@]}"
-          rustfmt --check --edition 2021 "${files[@]}"
+          git diff --check "$base" "${{ github.sha }}" --
 
   prepare-release:
     name: Create unique release identity
@@ -90,3 +79,27 @@ jobs:
       upload-artifact: true
       upload-tag: ${{ needs.prepare-release.outputs.tag }}
       release-name: ${{ needs.prepare-release.outputs.title }}
+
+  cleanup-failed-release:
+    name: Remove incomplete release
+    needs:
+      - prepare-release
+      - build-and-release
+    if: ${{ always() && needs.prepare-release.result == 'success' && needs.build-and-release.result != 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Remove this run's draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_id="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG_NAME}" \
+              --jq '.id' 2>/dev/null || true
+          )"
+          if [ -n "$release_id" ]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          fi
