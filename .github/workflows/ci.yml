@@ -160,7 +160,10 @@ jobs:
 
     - name: Install vcpkg dependencies
       run: |
-        $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"
+        bash .github/scripts/retry-vcpkg-install.sh \
+          "$VCPKG_ROOT/vcpkg" \
+          install \
+          --x-install-root="$VCPKG_ROOT/installed"
       shell: bash
 
     - name: Install Rust toolchain

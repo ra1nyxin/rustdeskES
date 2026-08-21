@@ -266,19 +266,11 @@ jobs:
         env:
           VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.job.vcpkg-triplet }}
         run: |
-          if ! $VCPKG_ROOT/vcpkg \
+          bash .github/scripts/retry-vcpkg-install.sh \
+            "$VCPKG_ROOT/vcpkg" \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+            --x-install-root="$VCPKG_ROOT/installed"
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
         shell: bash
 
@@ -474,19 +466,11 @@ jobs:
         env:
           VCPKG_DEFAULT_HOST_TRIPLET: ${{ matrix.job.vcpkg-triplet }}
         run: |
-          if ! $VCPKG_ROOT/vcpkg \
+          bash .github/scripts/retry-vcpkg-install.sh \
+            "$VCPKG_ROOT/vcpkg" \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+            --x-install-root="$VCPKG_ROOT/installed"
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
         shell: bash
 
@@ -622,19 +606,11 @@ jobs:
 
       - name: Install vcpkg dependencies
         run: |
-          if ! $VCPKG_ROOT/vcpkg \
+          bash .github/scripts/retry-vcpkg-install.sh \
+            "$VCPKG_ROOT/vcpkg" \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+            --x-install-root="$VCPKG_ROOT/installed"
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
         shell: bash
 
@@ -830,18 +806,10 @@ jobs:
 
       - name: Install vcpkg dependencies
         run: |
-          if ! $VCPKG_ROOT/vcpkg \
+          bash .github/scripts/retry-vcpkg-install.sh \
+            "$VCPKG_ROOT/vcpkg" \
             install \
-            --x-install-root="$VCPKG_ROOT/installed"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+            --x-install-root="$VCPKG_ROOT/installed"
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
 
       - name: Show version information (Rust, cargo, Clang)
@@ -1090,16 +1058,9 @@ jobs:
               ANDROID_TARGET=x86
             ;;
           esac
-          if ! ./flutter/build_android_deps.sh "${ANDROID_TARGET}"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+          bash .github/scripts/retry-vcpkg-install.sh \
+            ./flutter/build_android_deps.sh \
+            "${ANDROID_TARGET}"
         shell: bash
 
       - name: Restore bridge files
@@ -1542,19 +1503,11 @@ jobs:
         if: matrix.job.arch == 'x86_64' || env.UPLOAD_ARTIFACT == 'true'
         run: |
           sudo apt install -y libva-dev && apt show libva-dev
-          if ! $VCPKG_ROOT/vcpkg \
+          bash .github/scripts/retry-vcpkg-install.sh \
+            "$VCPKG_ROOT/vcpkg" \
             install \
             --triplet ${{ matrix.job.vcpkg-triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+            --x-install-root="$VCPKG_ROOT/installed"
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
         shell: bash
 
@@ -1858,19 +1811,11 @@ jobs:
       - name: Install vcpkg dependencies
         run: |
           sudo apt install -y libva-dev && apt show libva-dev
-          if ! $VCPKG_ROOT/vcpkg \
+          bash .github/scripts/retry-vcpkg-install.sh \
+            "$VCPKG_ROOT/vcpkg" \
             install \
             --triplet x64-linux \
-            --x-install-root="$VCPKG_ROOT/installed"; then
-            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-              echo "$_1:"
-              echo "======"
-              cat "$_1"
-              echo "======"
-              echo ""
-            done
-            exit 1
-          fi
+            --x-install-root="$VCPKG_ROOT/installed"
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-x64-linux-rel-out.log" || true
         shell: bash
 
@@ -2235,16 +2180,11 @@ jobs:
             export VCPKG_ROOT=/opt/artifacts/vcpkg
             # remove this when support higher version
             export USE_AOM_391=1
-            if ! $VCPKG_ROOT/vcpkg install --triplet ${{ matrix.job.vcpkg-triplet }} --x-install-root="$VCPKG_ROOT/installed"; then
-              find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
-                echo "$_1:"
-                echo "======"
-                cat "$_1"
-                echo "======"
-                echo ""
-              done
-              exit 1
-            fi
+            bash /workspace/.github/scripts/retry-vcpkg-install.sh \
+              "$VCPKG_ROOT/vcpkg" \
+              install \
+              --triplet ${{ matrix.job.vcpkg-triplet }} \
+              --x-install-root="$VCPKG_ROOT/installed"
             head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
             # build rustdesk
             python3 ./res/inline-sciter.py
